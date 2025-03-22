@@ -1,1 +1,0 @@
-# myvote-app
