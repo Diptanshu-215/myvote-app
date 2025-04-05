@@ -68,7 +68,7 @@ export default function Pending() {
         
         <TouchableOpacity 
           style={styles.button}
-          onPress={() => router.push('/login')}
+          onPress={() => router.push('./login')}
         >
           <Text style={styles.buttonText}>Back to Login</Text>
         </TouchableOpacity>

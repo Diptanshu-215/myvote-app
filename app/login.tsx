@@ -1,33 +1,52 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Platform } from 'react-native';
+import React, { useEffect } from 'react';
+import { StyleSheet, Text, View, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import { useAuthState } from '../services/authService';
+import GoogleSignInButton from '../components/GoogleSignInButton';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function Login() {
   const router = useRouter();
-  const [userType, setUserType] = useState<'normal' | 'admin'>('normal');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const { user, loading: authLoading } = useAuthState();
 
-  const handleLogin = () => {
-    if (!email || !password) {
-      setError('Please fill in all fields');
-      return;
+  // Redirect if user is already logged in
+  useEffect(() => {
+    if (user && !authLoading) {
+      // Use setTimeout to ensure navigation happens after component is mounted
+      setTimeout(() => {
+        router.replace('/');
+      }, 0);
     }
-    setError('');
-    
-    // Navigate based on user type
-    if (userType === 'admin') {
-      router.push('/admin');
-    } else {
-      router.push('/');
-    }
+  }, [user, authLoading, router]);
+
+  const handleGoogleSignSuccess = () => {
+    // Navigate to home after Google sign in
+    setTimeout(() => {
+      router.replace('/');
+    }, 0);
   };
+
+  const handleGoogleSignError = (error: any) => {
+    console.error('Google Sign-In Error:', error);
+  };
+
+  // Show loading while checking auth state
+  if (authLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color={Colors.light.tint} />
+      </View>
+    );
+  }
+
+  // Don't render login form if already logged in
+  if (user) {
+    return null;
+  }
 
   return (
     <View style={styles.container}>
@@ -35,7 +54,7 @@ export default function Login() {
       
       <LinearGradient
         colors={['#4a65ff', '#1e40af']}
-        style={styles.headerBackground}
+        style={styles.fullScreenBackground}
       />
       
       <Animated.View 
@@ -50,95 +69,19 @@ export default function Login() {
         entering={FadeInDown.delay(300).duration(1000)}
         style={styles.formContainer}
       >
-        <View style={styles.userTypeSelector}>
-          <TouchableOpacity
-            style={[
-              styles.userTypeButton,
-              userType === 'normal' && styles.activeUserType
-            ]}
-            onPress={() => setUserType('normal')}
-          >
-            <Ionicons 
-              name="person" 
-              size={20} 
-              color={userType === 'normal' ? Colors.light.background : Colors.light.text} 
-            />
-            <Text style={[
-              styles.userTypeText,
-              userType === 'normal' && styles.activeUserTypeText
-            ]}>Voter</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[
-              styles.userTypeButton,
-              userType === 'admin' && styles.activeUserType
-            ]}
-            onPress={() => setUserType('admin')}
-          >
-            <Ionicons 
-              name="shield" 
-              size={20} 
-              color={userType === 'admin' ? Colors.light.background : Colors.light.text} 
-            />
-            <Text style={[
-              styles.userTypeText,
-              userType === 'admin' && styles.activeUserTypeText
-            ]}>Admin</Text>
-          </TouchableOpacity>
+        <View style={styles.logoContainer}>
+          <View style={styles.iconCircle}>
+            <Ionicons name="logo-google" size={42} color="#4285F4" />
+          </View>
+          <Text style={styles.signInText}>Sign in with your Google account</Text>
         </View>
 
-        <Text style={styles.label}>Email</Text>
-        <View style={styles.inputContainer}>
-          <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your email"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
+        <View style={styles.googleButtonContainer}>
+          <GoogleSignInButton 
+            onSignInSuccess={handleGoogleSignSuccess}
+            onSignInError={handleGoogleSignError}
           />
         </View>
-
-        <Text style={styles.label}>Password</Text>
-        <View style={styles.inputContainer}>
-          <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your password"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
-        </View>
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-        <TouchableOpacity 
-          style={styles.forgotPassword}
-          onPress={() => router.push('/forgot-password')}
-        >
-          <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={styles.loginButton}
-          onPress={handleLogin}
-        >
-          <Text style={styles.loginButtonText}>Log In</Text>
-        </TouchableOpacity>
-
-        {userType === 'normal' && (
-          <TouchableOpacity 
-            style={styles.registerButton}
-            onPress={() => router.push('/register')}
-          >
-            <Text style={styles.registerButtonText}>
-              New User? <Text style={styles.registerButtonTextBold}>Register</Text>
-            </Text>
-          </TouchableOpacity>
-        )}
       </Animated.View>
     </View>
   );
@@ -149,14 +92,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.light.background,
   },
-  headerBackground: {
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullScreenBackground: {
     position: 'absolute',
     left: 0,
     right: 0,
     top: 0,
-    height: 220,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
+    bottom: 0,
   },
   header: {
     paddingTop: 60,
@@ -180,103 +125,43 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.background,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
-    paddingTop: 20,
     paddingHorizontal: 25,
     marginTop: 10,
-  },
-  userTypeSelector: {
-    flexDirection: 'row',
-    marginBottom: 25,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 10,
-    padding: 5,
-  },
-  userTypeButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  activeUserType: {
-    backgroundColor: Colors.light.tint,
-  },
-  userTypeText: {
-    marginLeft: 8,
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
-  activeUserTypeText: {
-    color: Colors.light.background,
-  },
-  label: {
-    fontSize: 16,
-    marginBottom: 8,
-    color: Colors.light.text,
-    fontWeight: '500',
-  },
-  inputContainer: {
-    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    backgroundColor: '#f9f9f9',
   },
-  inputIcon: {
-    padding: 10,
-  },
-  input: {
-    flex: 1,
-    height: 50,
-    paddingHorizontal: 10,
-  },
-  errorText: {
-    color: 'red',
-    marginBottom: 15,
-  },
-  forgotPassword: {
-    alignSelf: 'flex-end',
-    marginBottom: 20,
-  },
-  forgotPasswordText: {
-    color: Colors.light.tint,
-    fontWeight: '600',
-  },
-  loginButton: {
-    backgroundColor: Colors.light.tint,
-    borderRadius: 10,
-    height: 55,
+  logoContainer: {
     alignItems: 'center',
+    marginBottom: 40,
+  },
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'white',
     justifyContent: 'center',
-    marginTop: 10,
-    shadowColor: Colors.light.tint,
+    alignItems: 'center',
+    shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 2,
     },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    marginBottom: 15,
+    overflow: 'hidden',
+    borderWidth: 0,
   },
-  loginButtonText: {
-    color: '#fff',
+  signInText: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '500',
+    color: '#333',
+    textAlign: 'center',
   },
-  registerButton: {
-    marginTop: 20,
+  googleButtonContainer: {
+    width: '100%',
     alignItems: 'center',
-  },
-  registerButtonText: {
-    fontSize: 16,
-    color: Colors.light.text,
-  },
-  registerButtonTextBold: {
-    fontWeight: 'bold',
-    color: Colors.light.tint,
-  },
+    paddingBottom: 80, // Add some space from the bottom
+  }
 }); 

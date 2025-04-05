@@ -1,15 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, RefreshControl } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
 import Animated, { FadeInUp, FadeInRight } from 'react-native-reanimated';
+import { useAuthState, logoutUser } from '../services/authService'; 
+import { getVoterProfile, VoterVerificationStatus, VoterProfile } from '../services/voterService';
 
 export default function Home() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuthState();
   const [refreshing, setRefreshing] = useState(false);
-  const [voterStatus, setVoterStatus] = useState<'verified' | 'pending'>('verified');
+  const [voterProfile, setVoterProfile] = useState<VoterProfile | null>(null);
+  const [loading, setLoading] = useState(true);
   const [upcomingElections, setUpcomingElections] = useState([
     {
       id: '1',
@@ -25,17 +29,103 @@ export default function Home() {
     },
   ]);
 
+  useEffect(() => {
+    if (!user) {
+      setTimeout(() => {
+        router.replace('/login');
+      }, 0);
+      return;
+    }
+
+    loadVoterProfile();
+  }, [user]);
+
+  const loadVoterProfile = async () => {
+    if (!user) return;
+    
+    try {
+      setLoading(true);
+      const profile = await getVoterProfile(user);
+      setVoterProfile(profile);
+    } catch (error) {
+      console.error('Error loading voter profile:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
-    // Simulate fetching data from blockchain
-    setTimeout(() => {
+    loadVoterProfile().then(() => {
       setRefreshing(false);
-    }, 2000);
-  }, []);
+    });
+  }, [user]);
 
-  const handleLogout = () => {
-    router.push('/login');
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+      setTimeout(() => {
+        router.replace('/login');
+      }, 0);
+    } catch (error) {
+      console.error('Error logging out:', error);
+    }
   };
+
+  // Get status icon and color based on verification status
+  const getStatusInfo = () => {
+    if (!voterProfile) {
+      return {
+        icon: "help-circle",
+        color: "#9E9E9E",
+        text: "Unknown",
+        description: "Your voter status could not be determined."
+      };
+    }
+
+    switch (voterProfile.verificationStatus) {
+      case VoterVerificationStatus.VERIFIED:
+        return {
+          icon: "checkmark-circle",
+          color: "#4CAF50",
+          text: "Verified",
+          description: "Your identity has been verified on the blockchain."
+        };
+      case VoterVerificationStatus.PENDING:
+        return {
+          icon: "time",
+          color: "#FF9800",
+          text: "Pending Verification",
+          description: "Your verification is being processed by admin."
+        };
+      case VoterVerificationStatus.REJECTED:
+        return {
+          icon: "close-circle",
+          color: "#F44336",
+          text: "Verification Rejected",
+          description: "Your verification was rejected. Please contact support."
+        };
+      case VoterVerificationStatus.NOT_VERIFIED:
+      default:
+        return {
+          icon: "alert-circle",
+          color: "#9E9E9E",
+          text: "Not Verified",
+          description: "Please complete the verification process to participate in elections."
+        };
+    }
+  };
+
+  const statusInfo = getStatusInfo();
+
+  // If we're loading or don't have a user, show loading state
+  if (!user || authLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color={Colors.light.tint} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -65,24 +155,35 @@ export default function Home() {
         >
           <View style={styles.statusIconContainer}>
             <Ionicons 
-              name={voterStatus === 'verified' ? "checkmark-circle" : "time"} 
+              name={statusInfo.icon as any} 
               size={32} 
-              color={voterStatus === 'verified' ? "#4CAF50" : "#FF9800"} 
+              color={statusInfo.color} 
             />
           </View>
           <View style={styles.statusContent}>
             <Text style={styles.statusTitle}>Voter Status</Text>
             <Text style={[
               styles.statusValue,
-              {color: voterStatus === 'verified' ? "#4CAF50" : "#FF9800"}
+              {color: statusInfo.color}
             ]}>
-              {voterStatus === 'verified' ? 'Verified' : 'Pending Verification'}
+              {statusInfo.text}
             </Text>
             <Text style={styles.statusDescription}>
-              {voterStatus === 'verified' 
-                ? 'Your identity has been verified on the blockchain.' 
-                : 'Your verification is being processed by admin.'}
+              {statusInfo.description}
             </Text>
+            
+            {voterProfile?.verificationStatus === VoterVerificationStatus.NOT_VERIFIED && (
+              <TouchableOpacity 
+                style={styles.submitButton}
+                onPress={() => {
+                  setTimeout(() => {
+                    router.replace('/register');
+                  }, 0);
+                }}
+              >
+                <Text style={styles.submitButtonText}>Submit Details</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </Animated.View>
 
@@ -234,6 +335,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     lineHeight: 20,
+    marginBottom: 10,
+  },
+  submitButton: {
+    backgroundColor: Colors.light.tint,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginTop: 5,
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
   },
   voterIdCard: {
     backgroundColor: '#fff',
@@ -365,5 +480,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#444',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 }); 

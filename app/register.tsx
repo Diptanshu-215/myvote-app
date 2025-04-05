@@ -1,289 +1,405 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, Alert, Image, ActivityIndicator } from 'react-native';
+import { 
+  StyleSheet, 
+  Text, 
+  View, 
+  TextInput, 
+  TouchableOpacity, 
+  ScrollView,
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Image
+} from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
-import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { updateVoterStatus, VoterVerificationStatus } from '../services/voterService';
+import { useAuthState } from '../services/authService';
 import * as ImagePicker from 'expo-image-picker';
 
 export default function Register() {
   const router = useRouter();
-  const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
-    dateOfBirth: new Date(),
-    address: '',
-    idNumber: '',
-    phoneNumber: '',
-    profilePhoto: '',
-  });
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const { user } = useAuthState();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  
+  // Form state
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [fatherName, setFatherName] = useState('');
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [zipCode, setZipCode] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
+  const [aadharNumber, setAadharNumber] = useState('');
+  const [aadharImage, setAadharImage] = useState<string | null>(null);
 
-  const handleInputChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
+  // Error states
+  const [errors, setErrors] = useState({
+    firstName: '',
+    lastName: '',
+    fatherName: '',
+    address: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    dateOfBirth: '',
+    aadharNumber: '',
+    aadharImage: ''
+  });
 
-  const handleDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(false);
-    if (selectedDate) {
-      setFormData(prev => ({ ...prev, dateOfBirth: selectedDate }));
-    }
-  };
+  // Function to handle image picking
+  const pickAadharImage = async () => {
+    try {
+      // Launch image picker without explicit permission checks
+      // ImagePicker will handle permission requests internally
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
 
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
-
-    if (!result.canceled) {
-      setFormData(prev => ({ ...prev, profilePhoto: result.assets[0].uri }));
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setAadharImage(result.assets[0].uri);
+        // Clear any previous error
+        setErrors(prev => ({ ...prev, aadharImage: '' }));
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'There was a problem uploading your image.');
     }
   };
 
   const validateForm = () => {
-    if (!formData.fullName || !formData.email || !formData.password || !formData.confirmPassword ||
-        !formData.address || !formData.idNumber || !formData.phoneNumber) {
-      setError('Please fill in all required fields');
-      return false;
+    let valid = true;
+    const newErrors = {
+      firstName: '',
+      lastName: '',
+      fatherName: '',
+      address: '',
+      city: '',
+      state: '',
+      zipCode: '',
+      dateOfBirth: '',
+      aadharNumber: '',
+      aadharImage: ''
+    };
+
+    if (!firstName.trim()) {
+      newErrors.firstName = 'First name is required';
+      valid = false;
     }
-    
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
-      return false;
+
+    if (!lastName.trim()) {
+      newErrors.lastName = 'Last name is required';
+      valid = false;
     }
-    
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      setError('Please enter a valid email address');
-      return false;
+
+    if (!fatherName.trim()) {
+      newErrors.fatherName = 'Father name is required';
+      valid = false;
     }
-    
-    // Age verification - must be at least 18 years old
-    const today = new Date();
-    const birthDate = new Date(formData.dateOfBirth);
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const m = today.getMonth() - birthDate.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
+
+    if (!address.trim()) {
+      newErrors.address = 'Address is required';
+      valid = false;
     }
-    
-    if (age < 18) {
-      setError('You must be at least 18 years old to register');
-      return false;
+
+    if (!city.trim()) {
+      newErrors.city = 'City is required';
+      valid = false;
     }
-    
-    return true;
+
+    if (!state.trim()) {
+      newErrors.state = 'State is required';
+      valid = false;
+    }
+
+    if (!zipCode.trim()) {
+      newErrors.zipCode = 'ZIP code is required';
+      valid = false;
+    } else if (!/^\d{5}(-\d{4})?$/.test(zipCode.trim())) {
+      newErrors.zipCode = 'Enter a valid ZIP code';
+      valid = false;
+    }
+
+    if (!dateOfBirth.trim()) {
+      newErrors.dateOfBirth = 'Date of birth is required';
+      valid = false;
+    } else if (!/^\d{2}\/\d{2}\/\d{4}$/.test(dateOfBirth.trim())) {
+      newErrors.dateOfBirth = 'Enter date in MM/DD/YYYY format';
+      valid = false;
+    }
+
+    if (!aadharNumber.trim()) {
+      newErrors.aadharNumber = 'Aadhar number is required';
+      valid = false;
+    } else if (!/^\d{12}$/.test(aadharNumber.trim())) {
+      newErrors.aadharNumber = 'Enter a valid 12-digit Aadhar number';
+      valid = false;
+    }
+
+    if (!aadharImage) {
+      newErrors.aadharImage = 'Aadhar card image is required';
+      valid = false;
+    }
+
+    setErrors(newErrors);
+    return valid;
   };
 
   const handleSubmit = async () => {
-    if (!validateForm()) return;
-    
-    setError('');
-    setLoading(true);
-    
+    if (!validateForm()) {
+      return;
+    }
+
+    if (!user) {
+      Alert.alert('Error', 'You must be logged in to submit verification details.');
+      return;
+    }
+
     try {
-      // Simulate sending data to the blockchain
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      setLoading(true);
+      
+      // For now, just collect the form data
+      // In a real app, you would upload the image to storage and save the URL
+      const formData = {
+        firstName,
+        lastName,
+        fatherName,
+        address,
+        city,
+        state,
+        zipCode,
+        dateOfBirth,
+        aadharNumber,
+        aadharImageUri: aadharImage,
+        submittedAt: new Date().toISOString()
+      };
+      
+      console.log('Form data submitted:', formData);
+      
+      // Set voter status to PENDING
+      await updateVoterStatus(user.uid, VoterVerificationStatus.PENDING);
       
       Alert.alert(
-        "Registration Successful",
-        "Your voter registration has been submitted to the blockchain for verification. Admin will review your application.",
-        [{ text: "OK", onPress: () => router.push('/pending') }]
+        'Verification Submitted',
+        'Your verification details have been submitted successfully. Your status is now pending verification.',
+        [
+          { 
+            text: 'OK', 
+            onPress: () => {
+              setTimeout(() => {
+                router.replace('/');
+              }, 0);
+            }
+          }
+        ]
       );
     } catch (error) {
-      setError('An error occurred. Please try again later.');
-      console.error(error);
+      console.error('Error submitting verification:', error);
+      Alert.alert('Error', 'There was a problem submitting your verification. Please try again.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCancel = () => {
+    setTimeout(() => {
+      router.back();
+    }, 0);
   };
 
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
       
-      <LinearGradient
-        colors={['#4a65ff', '#1e40af']}
-        style={styles.headerBackground}
-      />
-      
-      <Animated.View 
-        entering={FadeInUp.delay(200).duration(1000)}
-        style={styles.header}
-      >
+      <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={handleCancel}
         >
-          <Ionicons name="arrow-back" size={24} color="white" />
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Voter Registration</Text>
-      </Animated.View>
+        <Text style={styles.headerTitle}>Voter Verification</Text>
+        <View style={styles.placeholderRight} />
+      </View>
 
-      <Animated.View 
-        entering={FadeInDown.delay(300).duration(1000)}
-        style={styles.formContainer}
+      <ScrollView 
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
       >
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <Text style={styles.sectionTitle}>Personal Information</Text>
-          
-          <Text style={styles.label}>Full Name</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="person-outline" size={20} color="#666" style={styles.inputIcon} />
+        <Text style={styles.sectionTitle}>Personal Information</Text>
+        <Text style={styles.description}>
+          Please provide your details exactly as they appear on your government-issued ID.
+          This information will be verified against voter registration records.
+        </Text>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>First Name</Text>
+          <TextInput
+            style={errors.firstName ? [styles.input, styles.inputError] : styles.input}
+            placeholder="Enter your first name"
+            value={firstName}
+            onChangeText={setFirstName}
+          />
+          {errors.firstName ? <Text style={styles.errorText}>{errors.firstName}</Text> : null}
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Last Name</Text>
+          <TextInput
+            style={errors.lastName ? [styles.input, styles.inputError] : styles.input}
+            placeholder="Enter your last name"
+            value={lastName}
+            onChangeText={setLastName}
+          />
+          {errors.lastName ? <Text style={styles.errorText}>{errors.lastName}</Text> : null}
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Father's Name</Text>
+          <TextInput
+            style={errors.fatherName ? [styles.input, styles.inputError] : styles.input}
+            placeholder="Enter your father's name"
+            value={fatherName}
+            onChangeText={setFatherName}
+          />
+          {errors.fatherName ? <Text style={styles.errorText}>{errors.fatherName}</Text> : null}
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Street Address</Text>
+          <TextInput
+            style={errors.address ? [styles.input, styles.inputError] : styles.input}
+            placeholder="Enter your street address"
+            value={address}
+            onChangeText={setAddress}
+          />
+          {errors.address ? <Text style={styles.errorText}>{errors.address}</Text> : null}
+        </View>
+
+        <View style={styles.rowContainer}>
+          <View style={[styles.formGroup, styles.halfWidth]}>
+            <Text style={styles.label}>City</Text>
             <TextInput
-              style={styles.input}
-              placeholder="Enter your full name"
-              value={formData.fullName}
-              onChangeText={(value) => handleInputChange('fullName', value)}
+              style={errors.city ? [styles.input, styles.inputError] : styles.input}
+              placeholder="City"
+              value={city}
+              onChangeText={setCity}
             />
+            {errors.city ? <Text style={styles.errorText}>{errors.city}</Text> : null}
           </View>
-          
-          <Text style={styles.label}>Email</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
+
+          <View style={[styles.formGroup, styles.halfWidth]}>
+            <Text style={styles.label}>State</Text>
             <TextInput
-              style={styles.input}
-              placeholder="Enter your email address"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={formData.email}
-              onChangeText={(value) => handleInputChange('email', value)}
+              style={errors.state ? [styles.input, styles.inputError] : styles.input}
+              placeholder="State"
+              value={state}
+              onChangeText={setState}
+              maxLength={2}
             />
+            {errors.state ? <Text style={styles.errorText}>{errors.state}</Text> : null}
           </View>
-          
-          <Text style={styles.label}>Date of Birth</Text>
-          <TouchableOpacity
-            style={styles.inputContainer}
-            onPress={() => setShowDatePicker(true)}
-          >
-            <Ionicons name="calendar-outline" size={20} color="#666" style={styles.inputIcon} />
-            <Text style={styles.dateText}>
-              {formData.dateOfBirth.toLocaleDateString()}
-            </Text>
-          </TouchableOpacity>
-          
-          {showDatePicker && (
-            <DateTimePicker
-              value={formData.dateOfBirth}
-              mode="date"
-              display="default"
-              onChange={handleDateChange}
-              maximumDate={new Date()}
-            />
-          )}
-          
-          <Text style={styles.label}>Address</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="home-outline" size={20} color="#666" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your residential address"
-              value={formData.address}
-              onChangeText={(value) => handleInputChange('address', value)}
-            />
-          </View>
-          
-          <Text style={styles.label}>ID Number</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="card-outline" size={20} color="#666" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your ID number"
-              value={formData.idNumber}
-              onChangeText={(value) => handleInputChange('idNumber', value)}
-            />
-          </View>
-          
-          <Text style={styles.label}>Phone Number</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="call-outline" size={20} color="#666" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your phone number"
-              keyboardType="phone-pad"
-              value={formData.phoneNumber}
-              onChangeText={(value) => handleInputChange('phoneNumber', value)}
-            />
-          </View>
-          
-          <Text style={styles.label}>Profile Photo</Text>
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>ZIP Code</Text>
+          <TextInput
+            style={errors.zipCode ? [styles.input, styles.inputError] : styles.input}
+            placeholder="12345"
+            keyboardType="numeric"
+            value={zipCode}
+            onChangeText={setZipCode}
+            maxLength={10}
+          />
+          {errors.zipCode ? <Text style={styles.errorText}>{errors.zipCode}</Text> : null}
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Date of Birth (MM/DD/YYYY)</Text>
+          <TextInput
+            style={errors.dateOfBirth ? [styles.input, styles.inputError] : styles.input}
+            placeholder="MM/DD/YYYY"
+            value={dateOfBirth}
+            onChangeText={setDateOfBirth}
+            keyboardType="numeric"
+          />
+          {errors.dateOfBirth ? <Text style={styles.errorText}>{errors.dateOfBirth}</Text> : null}
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Aadhar Number</Text>
+          <TextInput
+            style={errors.aadharNumber ? [styles.input, styles.inputError] : styles.input}
+            placeholder="Enter your 12-digit Aadhar number"
+            value={aadharNumber}
+            onChangeText={setAadharNumber}
+            keyboardType="numeric"
+            maxLength={12}
+          />
+          {errors.aadharNumber ? <Text style={styles.errorText}>{errors.aadharNumber}</Text> : null}
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Aadhar Card Image</Text>
           <TouchableOpacity 
-            style={styles.photoUploadContainer}
-            onPress={pickImage}
+            style={errors.aadharImage ? [styles.imageUploadContainer, styles.inputError] : styles.imageUploadContainer} 
+            onPress={pickAadharImage}
           >
-            {formData.profilePhoto ? (
-              <Image source={{ uri: formData.profilePhoto }} style={styles.profileImage} />
+            {aadharImage ? (
+              <View style={styles.imagePreviewContainer}>
+                <Image source={{ uri: aadharImage }} style={styles.imagePreview} />
+                <TouchableOpacity 
+                  style={styles.changeImageButton}
+                  onPress={pickAadharImage}
+                >
+                  <Text style={styles.changeImageText}>Change Image</Text>
+                </TouchableOpacity>
+              </View>
             ) : (
-              <View style={styles.photoPlaceholder}>
-                <Ionicons name="camera-outline" size={40} color="#666" />
-                <Text style={styles.photoPlaceholderText}>Upload Photo</Text>
+              <View style={styles.uploadPlaceholder}>
+                <Ionicons name="camera" size={40} color="#999" />
+                <Text style={styles.uploadPlaceholderText}>Tap to upload Aadhar Card</Text>
               </View>
             )}
           </TouchableOpacity>
-          
-          <Text style={styles.sectionTitle}>Security</Text>
-          
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Create a password"
-              secureTextEntry
-              value={formData.password}
-              onChangeText={(value) => handleInputChange('password', value)}
-            />
-          </View>
-          
-          <Text style={styles.label}>Confirm Password</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Confirm your password"
-              secureTextEntry
-              value={formData.confirmPassword}
-              onChangeText={(value) => handleInputChange('confirmPassword', value)}
-            />
-          </View>
-          
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          
+          {errors.aadharImage ? <Text style={styles.errorText}>{errors.aadharImage}</Text> : null}
+        </View>
+
+        <View style={styles.privacyNote}>
+          <Ionicons name="shield-checkmark" size={20} color={Colors.light.tint} style={styles.privacyIcon} />
+          <Text style={styles.privacyText}>
+            Your information is protected and will only be used for voter verification purposes.
+          </Text>
+        </View>
+
+        <View style={styles.buttonContainer}>
           <TouchableOpacity 
-            style={[styles.submitButton, loading && styles.disabledButton]}
+            style={styles.submitButtonLarge}
             onPress={handleSubmit}
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color="#fff" size="small" />
             ) : (
-              <Text style={styles.submitButtonText}>Submit Registration</Text>
+              <Text style={styles.submitButtonText}>Submit for Verification</Text>
             )}
           </TouchableOpacity>
-          
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              Already have an account? {' '}
-              <Text 
-                style={styles.loginLink}
-                onPress={() => router.push('/login')}
-              >
-                Login
-              </Text>
-            </Text>
-          </View>
-        </ScrollView>
-      </Animated.View>
+
+          <TouchableOpacity 
+            style={styles.cancelButton}
+            onPress={handleCancel}
+            disabled={loading}
+          >
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -291,142 +407,165 @@ export default function Register() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.light.background,
-  },
-  headerBackground: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    height: 140,
+    backgroundColor: '#f5f7fa',
   },
   header: {
+    backgroundColor: Colors.light.tint,
     paddingTop: 60,
+    paddingBottom: 15,
     paddingHorizontal: 20,
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
   },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
-    marginRight: 10,
+    alignItems: 'center',
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
+  placeholderRight: {
+    width: 40,
   },
-  formContainer: {
+  content: {
     flex: 1,
-    backgroundColor: Colors.light.background,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    paddingTop: 30,
-    paddingHorizontal: 25,
-    marginTop: 20,
+    padding: 20,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 15,
-    color: Colors.light.tint,
+    color: '#333',
+    marginBottom: 10,
+  },
+  description: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  formGroup: {
+    marginBottom: 16,
+  },
+  rowContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  halfWidth: {
+    width: '48%',
   },
   label: {
-    fontSize: 16,
-    marginBottom: 8,
-    color: Colors.light.text,
-    fontWeight: '500',
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    backgroundColor: '#f9f9f9',
-  },
-  inputIcon: {
-    padding: 10,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#555',
+    marginBottom: 6,
   },
   input: {
-    flex: 1,
-    height: 50,
-    paddingHorizontal: 10,
-  },
-  dateText: {
-    flex: 1,
-    height: 50,
-    paddingHorizontal: 10,
-    paddingTop: 15,
-    color: '#000',
-  },
-  photoUploadContainer: {
-    height: 150,
+    backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#ddd',
-    borderRadius: 10,
-    marginBottom: 20,
-    overflow: 'hidden',
-    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
   },
-  photoPlaceholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photoPlaceholderText: {
-    marginTop: 10,
-    color: '#666',
-  },
-  profileImage: {
-    width: '100%',
-    height: '100%',
+  inputError: {
+    borderColor: '#e53935',
   },
   errorText: {
-    color: 'red',
-    marginBottom: 15,
+    color: '#e53935',
+    fontSize: 12,
+    marginTop: 4,
   },
-  submitButton: {
-    backgroundColor: Colors.light.tint,
-    borderRadius: 10,
-    height: 55,
+  privacyNote: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(25, 118, 210, 0.08)',
+    padding: 12,
+    borderRadius: 8,
+    marginVertical: 16,
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
-    marginBottom: 20,
-    shadowColor: Colors.light.tint,
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 5,
   },
-  disabledButton: {
-    backgroundColor: '#a0a0a0',
+  privacyIcon: {
+    marginRight: 8,
+  },
+  privacyText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#555',
+    lineHeight: 18,
+  },
+  buttonContainer: {
+    marginVertical: 20,
+  },
+  submitButtonLarge: {
+    backgroundColor: Colors.light.tint,
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 12,
   },
   submitButtonText: {
     color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  footer: {
-    marginTop: 10,
-    marginBottom: 30,
-    alignItems: 'center',
-  },
-  footerText: {
+    fontWeight: '600',
     fontSize: 16,
-    color: Colors.light.text,
   },
-  loginLink: {
-    fontWeight: 'bold',
-    color: Colors.light.tint,
+  cancelButton: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  imageUploadContainer: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    minHeight: 180,
+    overflow: 'hidden',
+  },
+  uploadPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    height: 180,
+  },
+  uploadPlaceholderText: {
+    marginTop: 10,
+    color: '#999',
+    textAlign: 'center',
+  },
+  imagePreviewContainer: {
+    position: 'relative',
+  },
+  imagePreview: {
+    width: '100%',
+    height: 200,
+    resizeMode: 'cover',
+  },
+  changeImageButton: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 4,
+  },
+  changeImageText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '500',
   },
 }); 
