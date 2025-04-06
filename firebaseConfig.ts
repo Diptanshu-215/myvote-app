@@ -1,4 +1,4 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { Platform } from 'react-native';
@@ -16,7 +16,7 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-let app;
+let app: FirebaseApp;
 
 // Prevent multiple initializations in a safe way
 if (!isBrowser() || (typeof window !== 'undefined' && getApps().length === 0)) {
@@ -25,7 +25,7 @@ if (!isBrowser() || (typeof window !== 'undefined' && getApps().length === 0)) {
   app = getApp();
 } else {
   // Server-side fallback (empty app)
-  app = {} as any;
+  app = {} as FirebaseApp;
 }
 
 // Get the auth instance
@@ -44,4 +44,4 @@ googleProvider.setCustomParameters({
   prompt: 'select_account'
 });
 
-export { auth, googleProvider, db }; 
+export { auth, googleProvider, db, app }; 

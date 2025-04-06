@@ -1,14 +1,39 @@
-import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Share, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, withDelay, FadeIn } from 'react-native-reanimated';
-import LottieView from 'lottie-react-native';
+import { checkVoterStatus } from '../services/apiService';
 
 export default function Pending() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [voterAddress, setVoterAddress] = useState('');
+  
+  // Get blockchain address from URL params
+  useEffect(() => {
+    if (params.address) {
+      setVoterAddress(params.address as string);
+    }
+  }, [params]);
+  
+  // Share voter registration info
+  const shareRegistration = async () => {
+    if (voterAddress) {
+      try {
+        await Share.share({
+          message: `I've registered as a voter on the blockchain! My voter ID is: ${voterAddress}`,
+          title: 'My Voter Registration'
+        });
+      } catch (error) {
+        console.error('Error sharing registration:', error);
+      }
+    }
+  };
   
   // Animation values
   const rotation = useSharedValue(0);
@@ -43,8 +68,8 @@ export default function Pending() {
         <Text style={styles.title}>Registration Pending</Text>
         
         <Text style={styles.description}>
-          Your voter registration has been submitted to the blockchain and is awaiting admin approval. 
-          You will receive an email notification once your registration has been reviewed.
+          Your voter registration has been submitted to the blockchain and is awaiting verification. 
+          You will be able to check your status in the app once the verification is complete.
         </Text>
         
         <View style={styles.statusContainer}>
@@ -53,6 +78,21 @@ export default function Pending() {
             <Text style={styles.statusText}>Pending Verification</Text>
           </View>
         </View>
+        
+        {voterAddress ? (
+          <View style={styles.blockchainContainer}>
+            <Text style={styles.blockchainLabel}>Your Blockchain Address:</Text>
+            <View style={styles.addressContainer}>
+              <Text style={styles.addressText}>{voterAddress}</Text>
+              <TouchableOpacity onPress={shareRegistration} style={styles.shareButton}>
+                <Ionicons name="share-outline" size={22} color={Colors.light.tint} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.idNote}>
+              This is your unique voter ID on the blockchain. Please save it for your records.
+            </Text>
+          </View>
+        ) : null}
         
         <View style={styles.infoContainer}>
           <View style={styles.infoItem}>
@@ -68,9 +108,9 @@ export default function Pending() {
         
         <TouchableOpacity 
           style={styles.button}
-          onPress={() => router.push('./login')}
+          onPress={() => router.replace('/')}
         >
-          <Text style={styles.buttonText}>Back to Login</Text>
+          <Text style={styles.buttonText}>Back to Home</Text>
         </TouchableOpacity>
       </Animated.View>
     </View>
@@ -116,7 +156,7 @@ const styles = StyleSheet.create({
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 30,
+    marginBottom: 20,
   },
   statusLabel: {
     fontSize: 16,
@@ -134,6 +174,38 @@ const styles = StyleSheet.create({
   statusText: {
     color: '#F57F17',
     fontWeight: '600',
+  },
+  blockchainContainer: {
+    width: '100%',
+    backgroundColor: '#E8F5E9',
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 20,
+  },
+  blockchainLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2E7D32',
+    marginBottom: 5,
+  },
+  addressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  addressText: {
+    fontSize: 12,
+    color: '#1B5E20',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    flex: 1,
+  },
+  shareButton: {
+    padding: 8,
+  },
+  idNote: {
+    fontSize: 12,
+    color: '#388E3C',
+    marginTop: 8,
   },
   infoContainer: {
     width: '100%',

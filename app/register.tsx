@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -18,15 +18,19 @@ import { Colors } from '../constants/Colors';
 import { updateVoterStatus, VoterVerificationStatus } from '../services/voterService';
 import { useAuthState } from '../services/authService';
 import * as ImagePicker from 'expo-image-picker';
+import { uploadAadharImage, uploadAadharImageDirect, registerVoter, UploadResponse } from '../services/apiService';
 
 export default function Register() {
   const router = useRouter();
   const { user } = useAuthState();
   const [loading, setLoading] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [aadharImageUrl, setAadharImageUrl] = useState('');
+  const [blockchainAddress, setBlockchainAddress] = useState('');
   
-  // Form state
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+  // Pre-populate user data from Google account if available
+  const [firstName, setFirstName] = useState(user?.displayName ? user.displayName.split(' ')[0] : '');
+  const [lastName, setLastName] = useState(user?.displayName ? (user.displayName.split(' ').slice(1).join(' ') || '') : '');
   const [fatherName, setFatherName] = useState('');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
@@ -34,7 +38,18 @@ export default function Register() {
   const [zipCode, setZipCode] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [aadharNumber, setAadharNumber] = useState('');
+  const [gender, setGender] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [aadharImage, setAadharImage] = useState<string | null>(null);
+  const [error, setError] = useState('');
+
+  // Generate a blockchain address
+  useEffect(() => {
+    const generatedAddress = '0x' + Array.from({length: 40}, () => 
+      Math.floor(Math.random() * 16).toString(16)
+    ).join('');
+    setBlockchainAddress(generatedAddress);
+  }, []);
 
   // Error states
   const [errors, setErrors] = useState({
@@ -47,29 +62,87 @@ export default function Register() {
     zipCode: '',
     dateOfBirth: '',
     aadharNumber: '',
+    gender: '',
+    phoneNumber: '',
     aadharImage: ''
   });
 
-  // Function to handle image picking
+  // Function to handle image picking and upload
   const pickAadharImage = async () => {
     try {
-      // Launch image picker without explicit permission checks
-      // ImagePicker will handle permission requests internally
+      // Launch image picker (fixing deprecation warning)
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images, // This is still correct, just ignore the warning
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setAadharImage(result.assets[0].uri);
+        const imageUri = result.assets[0].uri;
+        setAadharImage(imageUri);
+        
         // Clear any previous error
         setErrors(prev => ({ ...prev, aadharImage: '' }));
+        
+        // Upload the image
+        if (blockchainAddress) {
+          console.log('Uploading image...');
+          await uploadImage(imageUri);
+        }
       }
     } catch (error) {
       console.error('Error picking image:', error);
       Alert.alert('Error', 'There was a problem uploading your image.');
+    }
+  };
+  
+  // Function to upload the image
+  const uploadImage = async (imageUri: string) => {
+    if (!imageUri) {
+      console.log('Missing image URI for upload');
+      return;
+    }
+    
+    setUploadingImage(true);
+    
+    try {
+      console.log('Creating FormData manually for direct upload');
+      
+      // Create a proper FormData instance
+      const formData = new FormData();
+      
+      // Get the filename from URI
+      const filename = imageUri.split('/').pop() || 'aadhar.jpg';
+      
+      // Create the file object
+      const fileToUpload = {
+        uri: Platform.OS === 'android' ? imageUri : imageUri.replace('file://', ''),
+        type: 'image/jpeg',
+        name: filename,
+      };
+      
+      // Add ONLY the file with key 'aadharImage'
+      formData.append('aadharImage', fileToUpload as any);
+      
+      console.log('Calling uploadAadharImage from apiService');
+      const response = await uploadAadharImage(formData);
+      
+      console.log('Upload response:', JSON.stringify(response));
+      
+      if (response && response.fileUrl) {
+        setAadharImageUrl(response.fileUrl);
+        console.log('Successfully set image URL:', response.fileUrl);
+        setErrors(prev => ({ ...prev, aadharImage: '' }));
+        return response;
+      } else {
+        throw new Error('No file URL in response');
+      }
+    } catch (error) {
+      console.error('Error in uploadImage:', error);
+      Alert.alert('Upload Error', error instanceof Error ? error.message : 'Unknown error occurred');
+    } finally {
+      setUploadingImage(false);
     }
   };
 
@@ -85,6 +158,8 @@ export default function Register() {
       zipCode: '',
       dateOfBirth: '',
       aadharNumber: '',
+      gender: '',
+      phoneNumber: '',
       aadharImage: ''
     };
 
@@ -134,6 +209,19 @@ export default function Register() {
       valid = false;
     }
 
+    if (!phoneNumber.trim()) {
+      newErrors.phoneNumber = 'Phone number is required';
+      valid = false;
+    } else if (!/^\d{10}$/.test(phoneNumber.trim())) {
+      newErrors.phoneNumber = 'Enter a valid 10-digit phone number';
+      valid = false;
+    }
+
+    if (!gender.trim()) {
+      newErrors.gender = 'Gender is required';
+      valid = false;
+    }
+
     if (!aadharNumber.trim()) {
       newErrors.aadharNumber = 'Aadhar number is required';
       valid = false;
@@ -160,48 +248,62 @@ export default function Register() {
       Alert.alert('Error', 'You must be logged in to submit verification details.');
       return;
     }
+    
+    // Check if Aadhar image was uploaded and we have its URL
+    if (!aadharImageUrl) {
+      Alert.alert('Error', 'Please upload your Aadhar image before submitting.');
+      return;
+    }
 
     try {
       setLoading(true);
       
-      // For now, just collect the form data
-      // In a real app, you would upload the image to storage and save the URL
-      const formData = {
-        firstName,
-        lastName,
-        fatherName,
-        address,
-        city,
-        state,
-        zipCode,
-        dateOfBirth,
-        aadharNumber,
-        aadharImageUri: aadharImage,
-        submittedAt: new Date().toISOString()
+      // Format date of birth from MM/DD/YYYY to YYYY-MM-DD
+      const [month, day, year] = dateOfBirth.split('/');
+      const formattedDOB = `${year}-${month}-${day}`;
+      
+      // Prepare voter registration data
+      const voterData = {
+        address: blockchainAddress,
+        name: `${firstName} ${lastName}`,
+        gender: gender,
+        dob: formattedDOB,
+        city: city,
+        state: state,
+        aadharNumber: aadharNumber,
+        phoneNumber: phoneNumber,
+        email: user.email || '',
+        aadharImageUrl: aadharImageUrl // Use the URL received from the upload step
       };
       
-      console.log('Form data submitted:', formData);
+      console.log('Starting voter registration with data:', JSON.stringify(voterData));
+      
+      // Register voter
+      const result = await registerVoter(voterData);
+      
+      console.log('Registration successful, result:', JSON.stringify(result));
       
       // Set voter status to PENDING
       await updateVoterStatus(user.uid, VoterVerificationStatus.PENDING);
       
       Alert.alert(
-        'Verification Submitted',
-        'Your verification details have been submitted successfully. Your status is now pending verification.',
-        [
-          { 
-            text: 'OK', 
-            onPress: () => {
-              setTimeout(() => {
-                router.replace('/');
-              }, 0);
-            }
-          }
-        ]
+        'Registration Successful',
+        'Your voter registration has been submitted for verification.',
+        [{ text: "OK", onPress: () => router.push({
+          pathname: '/pending',
+          params: { address: blockchainAddress }
+        })}]
       );
     } catch (error) {
-      console.error('Error submitting verification:', error);
-      Alert.alert('Error', 'There was a problem submitting your verification. Please try again.');
+      console.error('Error submitting registration:', error);
+      
+      // More detailed error message
+      let errorMessage = 'There was a problem submitting your registration.';
+      if (error instanceof Error) {
+        errorMessage += ' ' + error.message;
+      }
+      
+      Alert.alert('Error', errorMessage + ' Please try again.');
     } finally {
       setLoading(false);
     }
@@ -269,6 +371,30 @@ export default function Register() {
             onChangeText={setFatherName}
           />
           {errors.fatherName ? <Text style={styles.errorText}>{errors.fatherName}</Text> : null}
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Gender</Text>
+          <TextInput
+            style={errors.gender ? [styles.input, styles.inputError] : styles.input}
+            placeholder="Enter your gender (Male/Female/Other)"
+            value={gender}
+            onChangeText={setGender}
+          />
+          {errors.gender ? <Text style={styles.errorText}>{errors.gender}</Text> : null}
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Phone Number</Text>
+          <TextInput
+            style={errors.phoneNumber ? [styles.input, styles.inputError] : styles.input}
+            placeholder="Enter your 10-digit phone number"
+            value={phoneNumber}
+            onChangeText={setPhoneNumber}
+            keyboardType="phone-pad"
+            maxLength={10}
+          />
+          {errors.phoneNumber ? <Text style={styles.errorText}>{errors.phoneNumber}</Text> : null}
         </View>
 
         <View style={styles.formGroup}>
@@ -350,13 +476,22 @@ export default function Register() {
           <TouchableOpacity 
             style={errors.aadharImage ? [styles.imageUploadContainer, styles.inputError] : styles.imageUploadContainer} 
             onPress={pickAadharImage}
+            disabled={uploadingImage}
           >
+            {uploadingImage && (
+              <View style={styles.uploadingOverlay}>
+                <ActivityIndicator size="large" color={Colors.light.tint} />
+                <Text style={styles.uploadingText}>Uploading...</Text>
+              </View>
+            )}
+            
             {aadharImage ? (
               <View style={styles.imagePreviewContainer}>
                 <Image source={{ uri: aadharImage }} style={styles.imagePreview} />
                 <TouchableOpacity 
                   style={styles.changeImageButton}
                   onPress={pickAadharImage}
+                  disabled={uploadingImage}
                 >
                   <Text style={styles.changeImageText}>Change Image</Text>
                 </TouchableOpacity>
@@ -382,7 +517,7 @@ export default function Register() {
           <TouchableOpacity 
             style={styles.submitButtonLarge}
             onPress={handleSubmit}
-            disabled={loading}
+            disabled={loading || uploadingImage}
           >
             {loading ? (
               <ActivityIndicator color="#fff" size="small" />
@@ -534,6 +669,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     minHeight: 180,
     overflow: 'hidden',
+    position: 'relative',
   },
   uploadPlaceholder: {
     alignItems: 'center',
@@ -567,5 +703,21 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '500',
+  },
+  uploadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    zIndex: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  uploadingText: {
+    marginTop: 10,
+    color: Colors.light.tint,
+    fontWeight: '600',
   },
 }); 
